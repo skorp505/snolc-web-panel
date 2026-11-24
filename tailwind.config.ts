@@ -5,14 +5,18 @@ export default {
   theme: {
     extend: {
       colors: {
-        border: "hsl(214 20% 22%)",
-        background: "hsl(220 20% 8%)",
-        foreground: "hsl(210 22% 94%)",
-        muted: "hsl(218 16% 16%)",
-        "muted-foreground": "hsl(215 13% 66%)",
-        card: "hsl(220 18% 11%)",
-        primary: "hsl(172 72% 44%)",
-        destructive: "hsl(4 82% 62%)",
+        // OpenWrt LuCI-style palette
+        canvas: "hsl(224 22% 10%)",
+        canvasHover: "hsl(224 22% 14%)",
+        panel: "hsl(224 22% 13%)",
+        panelHover: "hsl(224 22% 17%)",
+        border: "hsl(220 15% 26%)",
+        foreground: "hsl(210 40% 96%)",
+        muted: "hsl(220 14% 20%)",
+        "muted-foreground": "hsl(217 10% 58%)",
+        card: "hsl(222 20% 12%)",
+        primary: "hsl(199 89% 48%)",
+        destructive: "hsl(4 80% 58%)",
       },
     },
   },
