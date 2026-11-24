@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Установка или обновление бинарника snolc через официальный скрипт snolc.
-set -euo pipefail
+set -eu
+set -o pipefail 2>/dev/null || true
 
 progress() {
   if [ "${UPDATE_MODE:-}" = "1" ]; then

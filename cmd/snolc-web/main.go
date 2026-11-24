@@ -806,7 +806,7 @@ func runScriptToLog(script, logFile string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	cmd := exec.Command("/bin/sh", script)
+	cmd := exec.Command("/bin/bash", script)
 	cmd.Stdout = f
 	cmd.Stderr = f
 	err = cmd.Run()
