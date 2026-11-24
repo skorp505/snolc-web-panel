@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Установка snolc-web-panel: сборка панели, установка snolc, systemd, TLS.
-# Автоопределение текущей установки и предложение обновить.
+# SNOLC Web panel installer/manager.
+#
+# При запуске (без флагов) — меню:
+#   1) Установить панель
+#   2) Обновить панель
+#   3) Переустановить панель
+#   4) Удалить всё
+# Флаги: --install, --update, --reinstall, --remove.
 set -euo pipefail
 
 need_root() {
@@ -45,14 +51,16 @@ install_missing_tools() {
 
 install_missing_tools
 
-# --- флаги: --update, --force, --skip-snolc, переменные окружения
+# --- режим: --install|--update|--reinstall|--remove, с меню при нетерминальном запуске
+MODE=""
 for arg in "$@"; do
   case "$arg" in
-    --update) FORCE_UPDATE=1 ;;
-    --force) FORCE_UPDATE=1 ;;
-    --skip-snolc) SKIP_SNOLC=1 ;;
+    --install|--fresh) MODE=install ;;
+    --update) MODE=update ;;
+    --reinstall) MODE=reinstall ;;
+    --remove) MODE=remove ;;
     -h|--help)
-      echo "usage: scripts/install.sh [--update] [--force] [--skip-snolc]"
+      echo "usage: scripts/install.sh [--install|--update|--reinstall|--remove]"
       exit 0
       ;;
   esac
@@ -78,12 +86,6 @@ ADMIN_PASS="${ADMIN_PASS:-$(random_hex 12)}"
 ADMIN_PATH="${ADMIN_PATH:-/admin-$(random_hex 4)}"
 case "$ADMIN_PATH" in /*) ;; *) ADMIN_PATH="/$ADMIN_PATH" ;; esac
 
-# при обновлении сохраняем прежний админ-путь, если он задан в конфиге
-if [ -n "${FORCE_UPDATE:-}" ] && [ -f "$DIR/config.json" ]; then
-  prev="$(sed -n 's/.*"admin_path": "\([^"]*\)".*/\1/p' "$DIR/config.json" | tail -1)"
-  [ -n "$prev" ] && ADMIN_PATH="$prev"
-fi
-
 detect_existing() {
   [ -e "$BIN_DIR/snolc-web" ] && return 0
   [ -e "$DIR/config.json" ] && return 0
@@ -92,76 +94,116 @@ detect_existing() {
   return 1
 }
 
-# --- обнаружение установленной панели
-if detect_existing && [ -z "${FORCE_UPDATE:-}" ]; then
-  EXISTING_VERSION=""
-  [ -f "$DIR/panel-version" ] && EXISTING_VERSION="$(cat "$DIR/panel-version")"
-  log "existing SNOLC Web panel detected (version: ${EXISTING_VERSION:-unknown})"
-  log "installed panel: $BIN_DIR/snolc-web, config: $DIR, sources: $SRC_DIR"
-  printf 'Обновить установленную панель? [y/N] ' >&2
-  read -r answer || true
-  case "$answer" in
-    y|Y|yes|Yes|YES)
-      log "ошибка: подтвердите обновление передав --update, чтобы продолжить"
-      die "run scripts/install.sh --update to update"
-      ;;
-    *) log "оставляем установленную панель как есть" ; exit 0 ;;
+# --- меню
+if [ -z "$MODE" ]; then
+  log "SNOLC Web panel installer/manager"
+  echo
+  echo "1) Установить панель"
+  echo "2) Обновить панель"
+  echo "3) Переустановить панель"
+  echo "4) Удалить всё"
+  printf "Выберите действие [1-4]: "
+  read -r MODE_CHOICE || MODE_CHOICE=""
+  case "$MODE_CHOICE" in
+    1) MODE=install ;;
+    2) MODE=update ;;
+    3) MODE=reinstall ;;
+    4) MODE=remove ;;
+    *) die "выбор не определён (допустимы: 1, 2, 3, 4)" ;;
   esac
 fi
 
-log "admin path: $ADMIN_PATH, config dir: $DIR"
+# --- действия
+action_remove() {
+  log "остановка snolc-web..."
+  systemctl stop snolc-web.service >/dev/null 2>&1 || true
+  systemctl disable snolc-web.service >/dev/null 2>&1 || true
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  log "удаление: $BIN_DIR/snolc-web, $DIR, $SRC_DIR, snolc, systemd-юнит"
+  rm -f "$BIN_DIR/snolc-web"
+  rm -f /etc/systemd/system/snolc-web.service
+  rm -f /etc/systemd/system/multi-user.target.wants/snolc-web.service
+  rm -f "$(command -v snolc 2>/dev/null || true)" 2>/dev/null || true
+  rm -rf "$DIR" "$SRC_DIR"
+  log "удалено: $DIR, $SRC_DIR, $BIN_DIR/snolc-web"
+}
 
-mkdir -p "$DIR" "$SRC_DIR"
+action_install() {
+  log "проверка наличия установленной панели..."
+  if detect_existing; then
+    log "панель уже установлена ($BIN_DIR/snolc-web, $DIR, $SRC_DIR)"
+    log "ошибка: панель не переустанавливается в режиме Установить — используйте --update/--reinstall"
+  fi
+}
 
-# --- сборка панели
-log "cloning panel sources"
-rm -rf "$SRC_DIR"
-if ! git clone -q https://github.com/skorp505/snolc-web-panel.git "$SRC_DIR" 2>/dev/null; then
-  log "clone failed; removing and retrying"
-  rm -rf "$SRC_DIR"
-  git clone -q https://github.com/skorp505/snolc-web-panel.git "$SRC_DIR"
-fi
+action_update() {
+  log "проверка наличия установленной панели..."
+  if ! detect_existing; then
+    die "панель не установлена; сначала запустите с флагом --install"
+  fi
+  log "обновление панели..."
+}
 
-if command -v pnpm >/dev/null 2>&1; then
-  log "building frontend (vite)"
-  (cd "$SRC_DIR" && pnpm install --frozen-lockfile >/dev/null 2>&1 || true)
-  (cd "$SRC_DIR" && pnpm build >/dev/null 2>&1 || true)
-fi
-log "building snolc-web"
-(cd "$SRC_DIR" && CGO_ENABLED=0 go build -o "$BIN_DIR/snolc-web" ./cmd/snolc-web)
+action_reinstall() {
+  log "переустановка панели (старая будет удалена)..."
+  systemctl stop snolc-web.service >/dev/null 2>&1 || true
+  rm -f "$BIN_DIR/snolc-web"
+  rm -rf "$DIR" "$SRC_DIR"
+}
 
-if [ -f "$SRC_DIR/panel-version" ]; then
-  install -m 0644 "$SRC_DIR/panel-version" "$DIR/panel-version" 2>/dev/null || true
-fi
+# --- общая процедура установки/обновления
+do_install() {
+  if [ "$MODE" = update ] && [ -f "$DIR/config.json" ]; then
+    prev="$(sed -n 's/.*"admin_path": "\([^"]*\)".*/\1/p' "$DIR/config.json" | tail -1)"
+    [ -n "$prev" ] && ADMIN_PATH="$prev"
+  fi
 
-# --- установка snolc
-if [ -z "${SKIP_SNOLC:-}" ]; then
-  log "installing snolc (via official install.sh)"
-  sh "$SRC_DIR/scripts/install-snolc.sh" || log "warning: snolc install failed, retry from panel"
-fi
+  mkdir -p "$DIR" "$SRC_DIR"
 
-# --- конфигурация
-printf '{\n  "port": %s,\n  "addr": "0.0.0.0",\n  "admin_path": "%s"\n}\n' "$(random_port)" "$ADMIN_PATH" > "$DIR/config.json"
-if [ -n "${FORCE_UPDATE:-}" ] && [ -f "$DIR/panel.env" ]; then
-  ADMIN_USER="$(sed -n 's/^SNOLC_WEB_USER=//p' "$DIR/panel.env" | tail -1)"
-  ADMIN_PASS="$(sed -n 's/^SNOLC_WEB_PASS=//p' "$DIR/panel.env" | tail -1)"
-  if [ -z "$ADMIN_USER" ] || [ -z "$ADMIN_PASS" ]; then ADMIN_USER="admin"; ADMIN_PASS="$(random_hex 12)"; fi
-fi
-printf 'SNOLC_WEB_USER=%s\nSNOLC_WEB_PASS=%s\n' "$ADMIN_USER" "$ADMIN_PASS" > "$DIR/panel.env"
-chmod 600 "$DIR/panel.env"
+  log "cloning panel sources"
+  if ! git clone -q https://github.com/skorp505/snolc-web-panel.git "$SRC_DIR" 2>/dev/null; then
+    log "clone failed; removing and retrying"
+    rm -rf "$SRC_DIR"
+    git clone -q https://github.com/skorp505/snolc-web-panel.git "$SRC_DIR"
+  fi
 
-# --- TLS
-if [ ! -s "$DIR/tls.crt" ]; then
-  log "generating self-signed certificate"
-  HOST="$(hostname -I 2>/dev/null | awk '{print $1}')"
-  openssl req -x509 -newkey rsa:2048 -nodes -days "$TLS_DAYS" \
-    -keyout "$DIR/tls.key" -out "$DIR/tls.crt" -subj "/CN=${HOST:-snolc-web}" >/dev/null 2>&1
-  chmod 600 "$DIR/tls.key"
-fi
+  if command -v pnpm >/dev/null 2>&1; then
+    log "building frontend (vite)"
+    (cd "$SRC_DIR" && pnpm install --frozen-lockfile >/dev/null 2>&1 || true)
+    (cd "$SRC_DIR" && pnpm build >/dev/null 2>&1 || true)
+  fi
+  log "building snolc-web"
+  (cd "$SRC_DIR" && CGO_ENABLED=0 go build -o "$BIN_DIR/snolc-web" ./cmd/snolc-web)
 
-# --- systemd
-UNIT=/etc/systemd/system/snolc-web.service
-cat >"$UNIT" <<EOF
+  if [ -f "$SRC_DIR/panel-version" ]; then
+    install -m 0644 "$SRC_DIR/panel-version" "$DIR/panel-version" 2>/dev/null || true
+  fi
+
+  if [ -z "${SKIP_SNOLC:-}" ]; then
+    log "installing snolc (via official install.sh)"
+    sh "$SRC_DIR/scripts/install-snolc.sh" || log "warning: snolc install failed, retry from panel"
+  fi
+
+  printf '{\n  "port": %s,\n  "addr": "0.0.0.0",\n  "admin_path": "%s"\n}\n' "$(random_port)" "$ADMIN_PATH" > "$DIR/config.json"
+
+  if [ "$MODE" = update ] && [ -f "$DIR/panel.env" ]; then
+    ADMIN_USER="$(sed -n 's/^SNOLC_WEB_USER=//p' "$DIR/panel.env" | tail -1)"
+    ADMIN_PASS="$(sed -n 's/^SNOLC_WEB_PASS=//p' "$DIR/panel.env" | tail -1)"
+    [ -n "$ADMIN_USER" ] && [ -n "$ADMIN_PASS" ] || { ADMIN_USER="admin"; ADMIN_PASS="$(random_hex 12)"; }
+  fi
+  printf 'SNOLC_WEB_USER=%s\nSNOLC_WEB_PASS=%s\n' "$ADMIN_USER" "$ADMIN_PASS" > "$DIR/panel.env"
+  chmod 600 "$DIR/panel.env"
+
+  if [ ! -s "$DIR/tls.crt" ]; then
+    log "generating self-signed certificate"
+    HOST="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    openssl req -x509 -newkey rsa:2048 -nodes -days "$TLS_DAYS" \
+      -keyout "$DIR/tls.key" -out "$DIR/tls.crt" -subj "/CN=${HOST:-snolc-web}" >/dev/null 2>&1
+    chmod 600 "$DIR/tls.key"
+  fi
+
+  UNIT=/etc/systemd/system/snolc-web.service
+  cat >"$UNIT" <<EOF
 [Unit]
 Description=SNOLC Web Panel
 After=network.target
@@ -177,17 +219,37 @@ ExecStart=$BIN_DIR/snolc-web -config $DIR/config.json
 WantedBy=multi-user.target
 EOF
 
-# --- запуск
-log "starting systemd unit"
-systemctl daemon-reload >/dev/null 2>&1 || true
-systemctl stop snolc-web.service >/dev/null 2>&1 || true
-systemctl start snolc-web.service
-systemctl enable snolc-web.service >/dev/null
+  log "starting systemd unit"
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl stop snolc-web.service >/dev/null 2>&1 || true
+  systemctl start snolc-web.service
+  systemctl enable snolc-web.service >/dev/null
 
-PORT="$(awk -F'"' '/"port"/ {print $4}' "$DIR/config.json" 2>/dev/null || true)"
-echo
-echo "Установлен панель SNOLC Web:"
-echo "  URL: https://$(hostname -I 2>/dev/null | awk '{print $1}')${ADMIN_PATH}${PORT:+ (port $PORT)} или https://localhost${ADMIN_PATH}"
-echo "  Логин: $ADMIN_USER"
-echo "  Пароль: $ADMIN_PASS"
-echo
+  echo
+  echo "SNOLC Web панель установлена/обновлена:"
+  echo "  URL: https://$(hostname -I 2>/dev/null | awk '{print $1}')${ADMIN_PATH}"
+  echo "  Логин: $ADMIN_USER"
+  echo "  Пароль: $ADMIN_PASS"
+  echo
+}
+
+# --- объединение выбранного действия с установкой
+case "$MODE" in
+  install)
+    if detect_existing; then die "панель уже установлена; используйте --update или --reinstall"; fi
+    do_install
+    ;;
+  update)
+    action_update
+    do_install
+    ;;
+  reinstall)
+    action_reinstall
+    do_install
+    ;;
+  remove)
+    action_remove
+    log "удаление завершено"
+    ;;
+  *) die "неизвестный режим: $MODE" ;;
+esac
