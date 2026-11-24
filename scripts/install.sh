@@ -110,7 +110,11 @@ mkdir -p "$DIR" "$SRC_DIR"
 # --- сборка панели
 log "cloning panel sources"
 rm -rf "$SRC_DIR"
-git clone -q https://github.com/skorp505/snolc-web-panel.git "$SRC_DIR"
+if ! git clone -q https://github.com/skorp505/snolc-web-panel.git "$SRC_DIR" 2>/dev/null; then
+  log "clone failed; removing and retrying"
+  rm -rf "$SRC_DIR"
+  git clone -q https://github.com/skorp505/snolc-web-panel.git "$SRC_DIR"
+fi
 
 if command -v pnpm >/dev/null 2>&1; then
   log "building frontend (vite)"
