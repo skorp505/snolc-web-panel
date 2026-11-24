@@ -96,26 +96,33 @@ detect_existing() {
 
 # --- меню
 if [ -z "$MODE" ]; then
-  if [ ! -t 0 ]; then
-    log "stdin не интерактивен (curl | bash), выбираю: 1) Установить панель"
-    MODE=install
-  else
-    log "SNOLC Web panel installer/manager"
-    echo
-    echo "1) Установить панель"
-    echo "2) Обновить панель"
-    echo "3) Переустановить панель"
-    echo "4) Удалить всё"
+  log "SNOLC Web panel installer/manager"
+  echo
+  echo "1) Установить панель"
+  echo "2) Обновить панель"
+  echo "3) Переустановить панель"
+  echo "4) Удалить всё"
+  MODE_CHOICE=""
+  if [ -t 0 ]; then
     printf "Выберите действие [1-4]: "
-    read -r MODE_CHOICE || MODE_CHOICE=""
-    case "$MODE_CHOICE" in
-      1) MODE=install ;;
-      2) MODE=update ;;
-      3) MODE=reinstall ;;
-      4) MODE=remove ;;
-      *) die "выбор не определён (допустимы: 1, 2, 3, 4)" ;;
-    esac
+    read -r MODE_CHOICE || true
+  else
+    # Скрипт идёт по pipe (curl | bash): stdin занят самим скриптом,
+    # поэтому ждём команду с терминала (/dev/tty), а если терминала
+    # нет — принимаем ввод с stdin.
+    printf "Выберите действие [1-4] (ожидаю команду с терминала): " >&2
+    read -r MODE_CHOICE </dev/tty 2>/dev/null || MODE_CHOICE=""
+    if [ -z "$MODE_CHOICE" ]; then
+      read -r MODE_CHOICE || true
+    fi
   fi
+  case "$MODE_CHOICE" in
+    1) MODE=install ;;
+    2) MODE=update ;;
+    3) MODE=reinstall ;;
+    4) MODE=remove ;;
+    *) die "выбор не определён (допустимы: 1, 2, 3, 4)" ;;
+  esac
 fi
 
 # --- действия
