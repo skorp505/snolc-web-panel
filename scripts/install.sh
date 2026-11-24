@@ -78,6 +78,12 @@ ADMIN_PASS="${ADMIN_PASS:-$(random_hex 12)}"
 ADMIN_PATH="${ADMIN_PATH:-/admin-$(random_hex 4)}"
 case "$ADMIN_PATH" in /*) ;; *) ADMIN_PATH="/$ADMIN_PATH" ;; esac
 
+# при обновлении сохраняем прежний админ-путь, если он задан в конфиге
+if [ -n "${FORCE_UPDATE:-}" ] && [ -f "$DIR/config.json" ]; then
+  prev="$(sed -n 's/.*"admin_path": "\([^"]*\)".*/\1/p' "$DIR/config.json" | tail -1)"
+  [ -n "$prev" ] && ADMIN_PATH="$prev"
+fi
+
 detect_existing() {
   [ -e "$BIN_DIR/snolc-web" ] && return 0
   [ -e "$DIR/config.json" ] && return 0
