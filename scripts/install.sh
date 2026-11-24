@@ -239,7 +239,8 @@ EOF
 
   echo
   echo "SNOLC Web панель установлена/обновлена:"
-  echo "  URL: https://$(hostname -I 2>/dev/null | awk '{print $1}')${ADMIN_PATH}"
+  PORT_NOW="$(awk -F'"' '/"port"/ {print $4}' "$DIR/config.json" 2>/dev/null || true)"
+  echo "  URL: https://$(hostname -I 2>/dev/null | awk '{print $1}')${PORT_NOW:+:$PORT_NOW}${ADMIN_PATH}"
   echo "  Логин: $ADMIN_USER"
   echo "  Пароль: $ADMIN_PASS"
   echo
