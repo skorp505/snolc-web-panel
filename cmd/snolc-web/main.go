@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -113,9 +114,16 @@ func run(configPath string) error {
 		return err
 	}
 
-	admin := adminFileServer()
+	admin, err := adminFileServer()
+	if err != nil {
+		return err
+	}
 	handler := http.NewServeMux()
-	handler.Handle("/admin", adminPageHandler(cfg, admin))
+	adminRoute := adminPath(cfg)
+	handler.Handle(adminRoute, adminPageHandler(cfg, admin))
+	if adminRoute != "/admin" {
+		handler.Handle("/admin", adminPageHandler(cfg, admin))
+	}
 	handler.Handle("/assets/", admin)
 	handler.Handle("/api/auth/setup", http.HandlerFunc(setupHandler(cfg)))
 	handler.Handle("/api/auth/login", http.HandlerFunc(loginHandler(cfg)))
@@ -193,8 +201,12 @@ func adminPath(cfg panelConfig) string {
 	return strings.TrimSuffix(cfg.AdminPath, "/")
 }
 
-func adminFileServer() http.Handler {
-	return http.FileServer(http.FS(adminAssets))
+func adminFileServer() (http.Handler, error) {
+	dist, err := fs.Sub(adminAssets, "web/dist")
+	if err != nil {
+		return nil, fmt.Errorf("load admin assets: %w", err)
+	}
+	return http.FileServer(http.FS(dist)), nil
 }
 
 func adminPageHandler(cfg panelConfig, files http.Handler) http.HandlerFunc {
