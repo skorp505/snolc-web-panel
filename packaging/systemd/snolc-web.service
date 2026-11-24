@@ -1,0 +1,13 @@
+[Unit]
+Description=SNOLC Web Panel
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+User=root
+ExecStart=/usr/local/bin/snolc-web -config /etc/snolc-web/config.json
+
+[Install]
+WantedBy=multi-user.target
