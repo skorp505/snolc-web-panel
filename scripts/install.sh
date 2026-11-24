@@ -15,8 +15,35 @@ need_root
 log() { printf '[snolc-web] %s\n' "$*"; }
 die() { printf '[snolc-web] ERROR: %s\n' "$*" >&2; exit 1; }
 
-command -v git curl openssl ss systemctl >/dev/null || die "missing tools: install git curl openssl ss systemctl"
-command -v go >/dev/null || die "Go is required (install from https://go.dev)"
+apt_pkg() { case "$1" in ss) echo iproute2 ;; *) echo "$1" ;; esac; }
+
+install_missing_tools() {
+  for tool in git curl openssl ss systemctl; do
+    command -v "$tool" >/dev/null && continue
+    log "installing missing tool: $tool"
+    pkg="$(apt_pkg "$tool")"
+    if command -v apt-get >/dev/null; then
+      apt-get install -y -q "$pkg" >/dev/null 2>&1 || { apt-get update -qq >/dev/null 2>&1; apt-get install -y -q "$pkg" >/dev/null 2>&1; }
+    elif command -v apk >/dev/null; then
+      apk add --no-cache "$pkg" >/dev/null 2>&1
+    elif command -v dnf >/dev/null; then
+      dnf install -y "$pkg" >/dev/null 2>&1
+    fi
+  done
+  if ! command -v go >/dev/null; then
+    if [ ! -x /usr/local/go/bin/go ]; then
+      log "installing Go"
+      arch=$(uname -m); [ "$arch" = x86_64 ] && arch=amd64 || true
+      curl -fsSL "https://go.dev/dl/go1.26.8.linux-${arch}.tar.gz" -o /tmp/go.tgz >/dev/null 2>&1 || true
+      tar -C /usr/local -xzf /tmp/go.tgz 2>/dev/null || true
+      rm -f /tmp/go.tgz
+    fi
+    export PATH=/usr/local/go/bin:$PATH
+  fi
+  command -v git curl openssl ss systemctl go >/dev/null || die "unable to install required tools"
+}
+
+install_missing_tools
 
 # --- флаги: --update, --force, --skip-snolc, переменные окружения
 for arg in "$@"; do
