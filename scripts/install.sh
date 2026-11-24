@@ -109,7 +109,7 @@ mkdir -p "$DIR" "$SRC_DIR"
 
 # --- сборка панели
 log "cloning panel sources"
-rm -rf "$SRC_DIR/.git" 2>/dev/null || true
+rm -rf "$SRC_DIR"
 git clone -q https://github.com/skorp505/snolc-web-panel.git "$SRC_DIR"
 
 if command -v pnpm >/dev/null 2>&1; then
