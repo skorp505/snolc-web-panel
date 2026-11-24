@@ -112,6 +112,11 @@ log "cloning panel sources"
 rm -rf "$SRC_DIR/.git" 2>/dev/null || true
 git clone -q https://github.com/skorp505/snolc-web-panel.git "$SRC_DIR"
 
+if command -v pnpm >/dev/null 2>&1; then
+  log "building frontend (vite)"
+  (cd "$SRC_DIR" && pnpm install --frozen-lockfile >/dev/null 2>&1 || true)
+  (cd "$SRC_DIR" && pnpm build >/dev/null 2>&1 || true)
+fi
 log "building snolc-web"
 (cd "$SRC_DIR" && CGO_ENABLED=0 go build -o "$BIN_DIR/snolc-web" ./cmd/snolc-web)
 

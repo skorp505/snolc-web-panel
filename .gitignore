@@ -1,5 +1,4 @@
 /snolc-web
 /cmd/snolc-web/snolc-web
-cmd/snolc-web/web/dist
 node_modules/
 .DS_Store
