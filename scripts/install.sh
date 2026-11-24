@@ -193,7 +193,7 @@ do_install() {
 
   if [ -z "${SKIP_SNOLC:-}" ]; then
     log "installing snolc (via official install.sh)"
-    sh "$SRC_DIR/scripts/install-snolc.sh" || log "warning: snolc install failed, retry from panel"
+    bash "$SRC_DIR/scripts/install-snolc.sh" || log "warning: snolc install failed, retry from panel"
   fi
 
   printf '{\n  "port": %s,\n  "addr": "0.0.0.0",\n  "admin_path": "%s"\n}\n' "$(random_port)" "$ADMIN_PATH" > "$DIR/config.json"
